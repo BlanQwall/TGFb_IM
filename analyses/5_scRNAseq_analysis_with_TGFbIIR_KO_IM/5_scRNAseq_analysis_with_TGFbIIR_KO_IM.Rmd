@@ -1,0 +1,455 @@
+---
+subtitle: "10_TGFbIIR_KO_IM"
+bibliography: bib.bib
+link-citations: yes
+date: "Rendered `r format (Sys.time(), format='%Y-%m-%d %H:%M:%S %z')`"
+output: 
+  pdf_document:
+    pandoc_args: 
+      - '../../common.yaml'
+      - --listings
+    includes: 
+      in_header: '../../preamble.tex'
+    toc: true
+    number_sections: true
+    fig_width: 7
+    fig_height: 6
+    fig_caption: true
+    df_print: tibble
+---
+
+
+```{r include=FALSE}
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80),
+               tidy=TRUE,
+               message = FALSE, 
+               warning = FALSE)
+
+```
+
+\newpage
+
+# Description
+
+Datasets from two samples were first merged and analysed together for normalization, dimension reduction and clustering analysis using `Seurat` package [@SeuratV5]. Analyses of differential expression (DE) were made with `FindMarkers` function. The following parameters were used to define significant DE genes in each subset: 
+
+  - Adjusted p value < 0.05
+  - Absolute log fold change > 0.5
+  
+The significant DE genes in Ly6C+ monocytes were subjected to gene ontology (GO) enrichment analysis using `clusterProfiler` package [@clusterProfiler] and annotation in `org.Mm.eg.db` package (version 3.18.0). 
+
+# Load data and packages
+
+```{r load package}
+suppressMessages(library(Seurat))
+suppressMessages(library(ggplot2))
+```
+
+
+```{r eval=FALSE}
+cd45pos_ctl <- readRDS(
+  "../4_scRNAseq_initiation/cd45pos_WT.seuratObject.rds")
+
+cd45pos_ko <- readRDS(
+  "../4_scRNAseq_initiation/cd45pos_KO.seuratObject.rds")
+```
+
+# Merge to analyze TGFbRII-KO and control samples together
+
+## Prepare metadata
+```{r eval=FALSE}
+cd45pos_ctl$genotype <- "TGFbRII F/F"
+cd45pos_ko$genotype <- "TGFbRII F/F Lyz2-Cre"
+```
+
+Now merge: 
+```{r eval=FALSE}
+cd45pos <- merge(cd45pos_ctl, cd45pos_ko)
+```
+
+## Normalize and process PCA
+
+```{r eval=FALSE}
+cd45pos <- NormalizeData(cd45pos)
+cd45pos <- FindVariableFeatures(cd45pos, selection.method = "vst", nfeatures
+= 2000)
+cd45pos <- ScaleData(cd45pos, features = rownames (cd45pos))
+cd45pos <- RunPCA(cd45pos, features = VariableFeatures(cd45pos))
+PCAPlot(cd45pos, group.by = "genotype")
+```
+
+## Non-linear dimension reduction
+
+```{r eval=FALSE}
+# For TSNE: 
+cd45pos <- RunTSNE(cd45pos, dims = 1:12)
+
+# For UMAP: 
+cd45pos.for3d <- RunUMAP(cd45pos, dims = 1:12, n.components = 3L)
+```
+
+## Clustering
+
+```{r eval=FALSE}
+cd45pos.for3d <- FindNeighbors(cd45pos.for3d, dims = 1:10)
+cd45pos.for3d <- FindClusters(cd45pos.for3d, resolution = 0.15) 
+Idents(cd45pos.for3d) <- "RNA_snn_res.0.15"
+
+celltype.2 <- as.character(cd45pos.for3d$RNA_snn_res.0.15)
+celltype.2[celltype.2 == "3"] <- "2"
+celltype.2 <- factor(celltype.2)
+levels(celltype.2) <- c("CD206- MI", 
+                        "Ly6C+ Mo", 
+                        "CD206+ MI", 
+                        "Cycling", 
+                        "Unknown")
+
+cd45pos.for3d[["cell.type.2"]] <- celltype.2
+```
+
+
+```{r eval=FALSE}
+celltype.1 <- as.character(celltype.2)
+celltype.1[celltype.1 %in% c("CD206- MI", "CD206+ MI")] <- "MI"
+celltype.1[celltype.1 %in% c("Ly6C+ Mo")] <- "Mo"
+celltype.1 <- factor(celltype.1)
+
+cd45pos.for3d[["cell.type.1"]] <- celltype.1
+```
+
+
+
+```{r include=FALSE}
+cd45pos.for3d <- readRDS(
+  file = "cd45pos_MI_Mo.for3d.seuratObject.rds")
+```
+
+## Plotting cell subsets and validate by gene expression
+
+```{r fig.height=4, fig.width=6}
+pal2 <- c(`CD206- MI`="#B2DF8A", 
+         `Ly6C+ Mo`="#A6CEE3",
+         `CD206+ MI`="#33A02C", 
+         `Cycling`= "#E31A1C", 
+         `Unknown`="lightgrey")
+
+# change the order in cell type list for plotting
+# cd45pos.for3d$cell.type.2 <- cd45pos.for3d$RNA_snn_res.0.15
+levels(cd45pos.for3d$cell.type.2) <-  c("CD206- MI",
+                                        "Ly6C+ Mo", 
+                                        "CD206+ MI",
+                                        "Cycling",
+                                        "Unknown")
+cd45pos.for3d$cell.type.2 <- factor(cd45pos.for3d$cell.type.2, 
+                                    c("CD206+ MI",
+                                      "CD206- MI",
+                                      "Ly6C+ Mo", 
+                                      "Cycling",
+                                      "Unknown"))  
+
+DimPlot(cd45pos.for3d, group.by = "cell.type.2", 
+        cols = pal2, 
+        reduction = "umap") + 
+  theme(aspect.ratio=1, 
+        plot.title = element_blank()) + 
+  labs(x = "UMAP1", 
+       y = "UMAP2", 
+       color = "Cell type") 
+  
+```
+
+```{r fig.height=3, fig.width=5}
+DimPlot(cd45pos.for3d, group.by = "cell.type.2", 
+        cols = pal2, 
+        split.by = "genotype",
+        reduction = "umap") + 
+  theme(aspect.ratio=1, 
+        plot.title = element_blank()) + 
+  labs(x = "UMAP1", 
+       y = "UMAP2", 
+       color = "Cell type") + guides(color="none")
+
+```
+
+Frequencies of each cell type in KO and control: 
+```{r fig.width=2.5, fig.height=4, message=FALSE, warning=FALSE}
+source("../../R/SeuratFreqTable.R")
+source("../../R/barChart.R")
+
+
+freq.celltype.list <- list(
+  `TGFbRII F/F` = Seurat2CellFreqTable(subset(cd45pos.for3d, 
+                                subset = genotype == "TGFbRII F/F"), 
+                                slotName = "cell.type.2"),   
+  `TGFbRII F/F Lyz2-Cre` = Seurat2CellFreqTable(subset(cd45pos.for3d, 
+                                subset = genotype == "TGFbRII F/F Lyz2-Cre"), 
+                                slotName = "cell.type.2")
+)
+
+barChart(freq.celltype.list) + labs(fill = "Cluster") + 
+  scale_fill_manual(values = pal2) +
+  theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust=1), 
+        axis.title.x = element_blank())
+```
+
+
+```{r eval=FALSE}
+library(dplyr)
+Idents(cd45pos.for3d) <- "cell.type.2"
+cd45pos.for3d <- JoinLayers(cd45pos.for3d)
+all_cluster.markers <- FindAllMarkers(cd45pos.for3d, verbose = FALSE)
+top20 <- all_cluster.markers %>% group_by(cluster) %>% top_n(n = 20, 
+                                                             wt = avg_log2FC)
+```
+
+```{r include=FALSE}
+top20 <- readRDS(file = "./DE_top20.ctrl_KO.celltype2.table.rds")
+```
+
+```{r fig.height=3.5, fig.width=9}
+DotPlot(cd45pos.for3d, features = c("Mrc1", "Lyve1", "Folr2", "Cd163", 
+                                    "Cd72", "Cd74", "H2-Eb1", "Ccrl2", 
+                                    "Ly6c2", "Ccr2", "Irf8", "Fcgr4", 
+                                    "Cdca3", "Ccna2", "Ccnb1", "Nusap1"), 
+        dot.scale = 10) +
+  theme(axis.text.x = element_text(angle = 60, vjust = 1, hjust=1), 
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank())
+```
+
+
+# Compare transcriptome of subsets, between TGFbRII-KO and Control
+
+## DE expression in subsets between TGFbRII-KO and Control
+
+```{r}
+Idents(cd45pos.for3d) <- "cell.type.2"
+cd45pos.for3d <- JoinLayers(cd45pos.for3d)
+```
+
+
+```{r eval=FALSE}
+de.cd206im.KO_vs_Ctrl <- FindMarkers(cd45pos.for3d, 
+                                ident.1 = "TGFbRII F/F Lyz2-Cre", 
+                                ident.2 = "TGFbRII F/F", 
+                                group.by = "genotype", 
+                                subset.ident = "CD206+ MI", 
+                                verbose=FALSE,
+                                random.seed=1, 
+                                min.pct = 0,
+                                min.cells.feature = 0,
+                                min.cells.group = 0,
+                                logfc.threshold=0 
+                                    )
+
+de.mhc2im.KO_vs_Ctrl <- FindMarkers(cd45pos.for3d, 
+                                ident.1 = "TGFbRII F/F Lyz2-Cre", 
+                                ident.2 = "TGFbRII F/F", 
+                                group.by = "genotype", 
+                                subset.ident = "CD206- MI", 
+                                verbose=FALSE,
+                                random.seed=1, 
+                                min.pct = 0,
+                                min.cells.feature = 0,
+                                min.cells.group = 0,
+                                logfc.threshold=0 
+                                    )
+
+de.extMo.KO_vs_Ctrl <- FindMarkers(cd45pos.for3d, 
+                                ident.1 = "TGFbRII F/F Lyz2-Cre", 
+                                ident.2 = "TGFbRII F/F", 
+                                group.by = "genotype", 
+                                subset.ident = "Ly6C+ Mo", 
+                                verbose=FALSE,
+                                random.seed=1, 
+                                min.pct = 0,
+                                min.cells.feature = 0,
+                                min.cells.group = 0,
+                                logfc.threshold=0 
+                                    )
+
+de.cycling.KO_vs_Ctrl <- FindMarkers(cd45pos.for3d, 
+                                ident.1 = "TGFbRII F/F Lyz2-Cre", 
+                                ident.2 = "TGFbRII F/F", 
+                                group.by = "genotype", 
+                                subset.ident = "Cycling", 
+                                verbose=FALSE,
+                                random.seed=1, 
+                                min.pct = 0,
+                                min.cells.feature = 0,
+                                min.cells.group = 0,
+                                logfc.threshold=0 
+                                    )
+
+```
+
+```{r include=FALSE}
+de.cd206im.KO_vs_Ctrl <- read.csv(file = "./de.cd206im.KO_vs_Ctrl.csv", 
+                                  row.names = 1)
+de.mhc2im.KO_vs_Ctrl <- read.csv(file = "./de.mhc2im.KO_vs_Ctrl.csv", 
+                                 row.names = 1)
+de.extMo.KO_vs_Ctrl <- read.csv(file = "./de.extMo.KO_vs_Ctrl.csv", 
+                                row.names = 1)
+de.cycling.KO_vs_Ctrl <- read.csv(file = "./de.cycling.KO_vs_Ctrl.csv", 
+                                  row.names = 1)
+```
+
+## Volcano plot show DE genes in LyC6+ monocytes comparing Tgfbr2-KO to control
+
+```{r fig.width=6, fig.height=5}
+library(EnhancedVolcano)
+# library(RColorBrewer)
+de.res <- de.extMo.KO_vs_Ctrl
+cols <- c( "#FF2600", "#0433FF")
+
+
+de.res$Gene <- rownames(de.res)
+keyvals <- rep("grey", nrow(de.res))
+names(keyvals) <- rep("non-signif", nrow(de.res))
+
+keyvals[which(de.res$avg_log2FC > 0.5 & de.res$p_val_adj < 0.05)] <- cols[1]
+names(keyvals)[which(de.res$avg_log2FC > 0.5 & 
+                       de.res$p_val_adj < 0.05)] <- "Donor TGFbIIR-KO"
+
+keyvals[which(de.res$avg_log2FC < -0.5 & de.res$p_val_adj < 0.05)] <- cols[2]
+names(keyvals)[which(de.res$avg_log2FC < -0.5 & 
+                       de.res$p_val_adj < 0.05)] <- "Donor Control"
+
+plot.vol <- EnhancedVolcano(de.res, subtitle = "", 
+                lab = rownames(de.res),
+                x = 'avg_log2FC',
+                y = 'p_val_adj',
+                xlab = bquote(~Log[2] ~ "Avg FoldChange"), 
+                ylab = bquote(~-Log[10] ~ italic(P_adj)),
+                xlim = c(-7, 7),
+                ylim=c(0, -log10(10e-18)),
+                selectLab = c("Nedd9", "Cd300a", "Plcb1", 
+                              "Irf1", "Cxcl9", "Stat1", "Vasp", 
+                              "Sdc4", "Ccl5", "Mif", "Cd38"),
+                labSize = 3,
+                pCutoff = 0.05,
+                FCcutoff = 0.5,
+                colAlpha = 0.5,
+                colCustom = keyvals,
+                legendLabSize = 8,
+                legendIconSize = 2.0,
+                border = "full",
+                legendPosition = "right",
+                axisLabSize = 20, 
+                title = "TGFbIIR KO vs control in Ly6C+ Mo", 
+                drawConnectors = TRUE, 
+                widthConnectors = 0.5)
+
+plot.vol
+```
+
+## Summary of significant DE genes:
+
+```{r}
+threshold.padj <- 0.05
+threshold.lfc <- 0.5
+
+sigDE.celltype2.KOvsCtrl <- list(
+  cd206im=de.cd206im.KO_vs_Ctrl[abs(de.cd206im.KO_vs_Ctrl$avg_log2FC) > threshold.lfc & de.cd206im.KO_vs_Ctrl$p_val_adj < threshold.padj , ], 
+  mhc2im=de.mhc2im.KO_vs_Ctrl[abs(de.mhc2im.KO_vs_Ctrl$avg_log2FC) > threshold.lfc & de.mhc2im.KO_vs_Ctrl$p_val_adj < threshold.padj , ], 
+  extMo=de.extMo.KO_vs_Ctrl[abs(de.extMo.KO_vs_Ctrl$avg_log2FC) > threshold.lfc & de.extMo.KO_vs_Ctrl$p_val_adj < threshold.padj , ], 
+  cycling=de.cycling.KO_vs_Ctrl[abs(de.cycling.KO_vs_Ctrl$avg_log2FC) > threshold.lfc & de.cycling.KO_vs_Ctrl$p_val_adj < threshold.padj , ] 
+)
+
+sapply(sigDE.celltype2.KOvsCtrl, nrow)
+```
+
+
+All significant up-regulated genes in KO are named "KO_UP":
+
+```{r}
+sig.symbol.KO_UP <- lapply(sigDE.celltype2.KOvsCtrl, function(x) {
+  rownames(x)[x$avg_log2FC > 0]
+} )
+
+names(sig.symbol.KO_UP) <- paste(names(sig.symbol.KO_UP), "KO_UP", sep = "_")
+```
+
+All significant down-regulated genes in KO are named "KO_DN": 
+
+```{r}
+sig.symbol.KO_DN <- lapply(sigDE.celltype2.KOvsCtrl, function(x) {
+  rownames(x)[x$avg_log2FC < -0]
+} )
+
+names(sig.symbol.KO_DN) <- paste(names(sig.symbol.KO_DN), "KO_DN", sep = "_")
+```
+
+Here's list for enrichment analyses: 
+
+```{r}
+sig.symbol.celltype2 <- c(sig.symbol.KO_UP, sig.symbol.KO_DN)
+str(sig.symbol.celltype2)
+```
+
+The significance is defined as: 
+threshold.padj <- `r threshold.padj`
+threshold.lfc <- `r threshold.lfc`
+
+## GO enrichment analysis with DE genes in Ly6C+ monocytes
+
+
+```{r message=FALSE}
+library(org.Mm.eg.db)
+library(clusterProfiler)
+sig.symbol.extMo <- sig.symbol.celltype2[c("extMo_KO_DN", "extMo_KO_UP")]
+
+extMo.KO_UP.GO_BP <- enrichGO(gene = sig.symbol.extMo$extMo_KO_UP,
+                              OrgDb = org.Mm.eg.db, 
+                          keyType = "SYMBOL",
+                          ont           = "BP",
+                          pAdjustMethod = "BH",
+                          pvalueCutoff  = 0.05,
+                          qvalueCutoff  = 0.05 )
+```
+
+With KO_DN genes: 
+
+```{r fig.width=6, fig.height=4}
+p1 <- dotplot(extMo.KO_UP.GO_BP, 
+        showCategory = c("response to type II interferon",
+"regulation of leukocyte cell-cell adhesion",
+"regulation of mononuclear cell proliferation",
+"positive regulation of T cell activation",
+"cellular response to interferon-beta",
+"intrinsic apoptotic signaling pathway"))
+p1
+```
+
+With KO_DN genes: 
+
+```{r}
+extMo.KO_DN.GO_BP <- enrichGO(gene = sig.symbol.extMo$extMo_KO_UP,
+                              OrgDb = org.Mm.eg.db, 
+                          keyType = "SYMBOL",
+                          ont           = "BP",
+                          pAdjustMethod = "BH",
+                          pvalueCutoff  = 0.05,
+                          qvalueCutoff  = 0.05 )
+```
+
+
+
+```{r fig.width=6, fig.height=2.5}
+p2 <- dotplot(extMo.KO_DN.GO_BP, 
+        showCategory = c(
+"positive regulation of T cell activation",
+"cellular response to interferon-beta",
+"intrinsic apoptotic signaling pathway"))
+p2
+```
+
+
+
+# Session information
+
+```{r}
+sessionInfo()
+```
+
+# References

@@ -1,0 +1,99 @@
+---
+subtitle: "4-Data preparation for single-cell RNA sequncing analysis"
+bibliography: bib.bib
+link-citations: yes
+date: "Rendered `r format (Sys.time(), format='%Y-%m-%d %H:%M:%S %z')`"
+output: 
+  pdf_document:
+    pandoc_args: 
+      - '../../common.yaml'
+      - --listings
+    includes: 
+      in_header: '../../preamble.tex'
+    toc: true
+    number_sections: true
+    fig_width: 7
+    fig_height: 6
+    fig_caption: true
+    df_print: tibble
+---
+
+
+```{r include=FALSE}
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80),
+               tidy=TRUE,
+               message = FALSE, 
+               warning = FALSE)
+
+```
+
+\newpage
+
+
+# Description
+
+Lung CD45.1-CD45.2+Ly6G-SiglecF-CD11b+SSCloCD64+ cells were FACS-sorted from lung single-cell suspensions pooled from 5 chimeric IMDTR mice in each of groups as the same in bulk RNA sequencing analysis. For each sample, an aliquot of Trypan blue-treated cells was examined under the microscope for counting, viability and aggregate assessment following FACS sorting. Viability was above 90% for all samples and no aggregates were observed. Cells from each group were then labelled with BioLegend TotalSeq anti-mouse hastags (TotalSeq-B0301 for control group and TotalSeq-B0303 for Tgfbr2-KO group) before being pooled. Pooled cells were centrifuged and pellet was resuspended in calcium- and magnesium-free PBS containing 0.4 mg ml-1 UltraPure BSA (Thermo Fisher Scientific). For library preparation, approximately 10 000 cells were loaded into the Chromium Controller, in which they were partitioned, their polyA RNAs captured and barcoded using Chromium Single Cell 3’ GEM, Library & Gel Bead Kit v3 (10X Genomics). The cDNAs were amplified and libraries compatible with Illumina sequencers were generated using Chromium Single Cell 3’ GEM, Library & Gel Bead Kit v3 (10X Genomics). For Hash Tag Oligonucleotide (HTO) library, HTO additive primer v2 were added to the mix at the cDNA amplification step. The libraries were sequenced on an Illumina NovaSeq sequencer on an SP100 cell flow (read 1, 28 cy; read 2, 76 cy; index 1, 10 cy; index 2, 10 cy) at a depth of 50,000 reads per cell. 
+
+The Cell Ranger (v8.0) application (10x Genomics) was then used to demultiplex the BCL files into FASTQ files (cellranger mkfastq), to perform alignment (to Cell Ranger human genome references 3.0.2 GRCm38/build 97), filtering, UMI counting and to produce gene-barcode matrices for each sample (cellranger multi). 
+
+The counts data are analysed in this step using `Seurat` package [@SeuratV5]. 
+
+# Demultiplexing (de-hashtag) of raw data
+
+The fastq data were demultiplexed and de-hashtagged with `cellranger multi` command in `cellranger` (v8.0). 
+
+# Load data and Seurat package
+
+The counts data were generated for two samples: *Tgfbr2-KO* (termed `KO` in the following codes) and *control* (`WT` in the following codes). 
+
+```{r load_pacakges}
+library(Seurat)
+library(ggpubr)
+source("../../R/seurat.setup.R") # a wrapped function to make Seurat object and show QC results. 
+project = "TGFb_IM"
+```
+
+## Sample WT: 
+
+```{r message=FALSE, warning=FALSE}
+cd45pos_WT <- seurat.setup(path.10x = "../../counts/counts_CD45pos/outs/per_sample_outs/CD45pos_WT/count/sample_filtered_feature_bc_matrix/", project = project, dimensionality = 1:20, mt.percentage = 10, human = FALSE)
+```
+
+
+```{r fig.width=12, fig.height=10}
+ggarrange(cd45pos_WT$plots$feature_vln, cd45pos_WT$plots$RNA_mt.pct_scatter, cd45pos_WT$plots$JackStrawPlot, cd45pos_WT$plots$ElbowPlot, ncol = 2, nrow = 2)
+```
+
+```{r fig.width=12, fig.height=10}
+ggarrange(cd45pos_WT$plots$variable_features, cd45pos_WT$plots$PCA_plot, cd45pos_WT$plots$UMAP_plot, cd45pos_WT$plots$TSNE_plot, ncol = 2, nrow = 2)
+```
+
+## Sample KO
+
+```{r message=FALSE, warning=FALSE}
+cd45pos_KO <- seurat.setup(path.10x = "../../counts/counts_CD45pos/outs/per_sample_outs/CD45pos_KO/count/sample_filtered_feature_bc_matrix/", project = project, dimensionality = 1:20, mt.percentage = 10, human = FALSE)
+```
+
+```{r fig.width=12, fig.height=10}
+ggarrange(cd45pos_KO$plots$feature_vln, cd45pos_KO$plots$RNA_mt.pct_scatter, cd45pos_KO$plots$JackStrawPlot, cd45pos_KO$plots$ElbowPlot, ncol = 2, nrow = 2)
+```
+
+```{r fig.width=12, fig.height=10}
+ggarrange(cd45pos_KO$plots$variable_features, cd45pos_KO$plots$PCA_plot, cd45pos_KO$plots$UMAP_plot, cd45pos_KO$plots$TSNE_plot, ncol = 2, nrow = 2)
+```
+
+# Save Seurat objects for further analyses
+```{r eval=FALSE}
+# save data for next use: 
+saveRDS(cd45pos_WT$seuratObject, file = "./cd45pos_WT.seuratObject.rds")
+saveRDS(cd45pos_KO$seuratObject, file = "./cd45pos_KO.seuratObject.rds")
+```
+
+
+# Session information
+
+```{r}
+sessionInfo()
+```
+
+# References

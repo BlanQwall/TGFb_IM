@@ -1,0 +1,273 @@
+---
+subtitle: "1-Microarray data preparation"
+bibliography: bib.bib
+link-citations: yes
+date: "Rendered `r format (Sys.time(), format='%Y-%m-%d %H:%M:%S %z')`"
+output: 
+  pdf_document:
+    pandoc_args: 
+      - '../../common.yaml'
+      - --listings
+    includes: 
+      in_header: '../../preamble.tex'
+    toc: true
+    number_sections: true
+    fig_width: 7
+    fig_height: 6
+    fig_caption: true
+    df_print: tibble
+---
+
+
+```{r include=FALSE}
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80),
+               tidy=TRUE,
+               message = FALSE, 
+               warning = FALSE)
+```
+
+\newpage
+
+
+# Overall design
+
+CD45.1/CD45.2 IMDTR mice were lethally irradiated with thorax protection and were fully reconstituted with BM cells either from CD45.2 Tgfbr2fl/fl mice or from CD45.2 Lyz2Cre Tgfbr2fl/fl mice. Four weeks later, chimeric IMDTR mice were treated with DT to specifically empty the IM niche and trigger IM niche refilling from either control or Tgfbr2-deficient monocytes. bulk RNA-seq was performed on reconstituted IMs 10 days after DT.
+
+Bulk RNA-seq data have been deposited at the Gene Expression Omnibus (GEO) and are available under GEO accession GSE271467 (https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE271467). Counts were normalized and managed by `DESeq2` package [@DESeq2] and the batch effects were corrected with `forcats` package [@forcats]. The following packages were used to build plots: `ggplot2` [@ggplot2], `pheatmap` [@pheatmap] and `RColorBrewer` [@RColorBrewer]. 
+
+
+# Counting from fastq data using nf-core/rnaseq pipeline
+
+The following codes were used to do the mapping and counting. 
+```{bash eval=FALSE}
+nextflow run nf-core/rnaseq --input sample_list.csv --fasta GRCm38/fasta/genome.fa --gtf GRCm38/genes/genes.gtf --outdir counts/bulkRNAseq/ -profile docker
+```
+
+`sample_list.csv` is text file with 5 columns: group, replicate, fastq_1, fastq_2 and strandedness. Prepared following to the software's instructions. 
+
+
+# Counts data processing
+
+```{r message=FALSE}
+suppressMessages(library(DESeq2))
+suppressMessages(library(ggplot2))
+suppressMessages(library(pheatmap))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(forcats))
+
+COUNTS <- read.table(
+  "../../data/salmon.merged.gene_counts.tsv",sep="\t", 
+  header=T, row.names = NULL)
+
+Genes <- COUNTS$gene_id
+rownames(COUNTS) = make.names(Genes, unique=TRUE)
+
+COUNTS <- COUNTS[,c(-1,-2)]
+COUNTS <- round(COUNTS, digits = 0)
+head(COUNTS, 3)
+
+```
+
+Annotation with org.Mm.eg.db package: 
+
+```{r}
+library(org.Mm.eg.db)
+symbols <- mapIds(org.Mm.eg.db, 
+                  keys = rownames(COUNTS), 
+                  keytype = "ENSEMBL", 
+                  column="SYMBOL")
+symbols.uniq <- na.omit(unique(symbols))
+
+# remove adundant ensembl ids: 
+COUNTS <- COUNTS[match(symbols.uniq, symbols), ]
+
+# use symbols as rownames: 
+rownames(COUNTS) <- symbols.uniq
+
+head(COUNTS)
+```
+
+
+# Make metadata for bulkRNAseq samples 
+
+```{r}
+SampleSheet <- data.frame(
+  `genotype`=rep(c("TGFbIIR_KO", "WT"), each = 4), 
+  `experiment`=c("exp1", 
+                 rep("exp2",3), 
+                 rep("exp1",2), 
+                 rep("exp2", 2))
+)
+rownames(SampleSheet) <- colnames(COUNTS)
+
+SampleSheet
+```
+
+
+# DESeq2 analysis
+
+```{r eval=FALSE}
+dds <- DESeqDataSetFromMatrix(
+  countData= COUNTS,
+  colData= SampleSheet,
+  design=  ~ experiment + genotype 
+)
+```
+
+```{r include=FALSE}
+dds <- readRDS(file = "./dds.Rds")
+```
+
+
+```{r}
+# Since data were from two sequencing experiments,
+# we applied the ComBat function to adjust for known batches
+
+suppressMessages(library(sva))
+batch = SampleSheet$experiment
+modcombat = model.matrix(~1, data=SampleSheet)
+group = SampleSheet$genotype
+
+# using parametric empirical Bayesian adjustments.
+combat_COUNTS = ComBat_seq(counts=as.matrix(COUNTS), 
+                           batch=batch, group = group)
+```
+
+
+## Perform rlog / vst transformation for distances and PCA
+
+```{r message=FALSE, warning=FALSE, eval=FALSE}
+dds.rmBatchEff <- DESeqDataSetFromMatrix(
+  countData= combat_COUNTS,
+  colData= SampleSheet,
+  design= ~ experiment + genotype 
+)
+
+# keep only genes with more than a single read
+dds.rmBatchEff <- dds.rmBatchEff[ rowSums(counts(dds.rmBatchEff)) > 1,]
+
+# perform vst transformation for distances (for clustering) and PCA
+vst.rmBatchEff <- vst(dds.rmBatchEff)
+rld.rmBatchEff <- rlog(dds.rmBatchEff)
+```
+
+```{r include=FALSE}
+rld.rmBatchEff <- readRDS("./rld.rmBatchEff.Rds")
+```
+
+
+Calculate sample-to-sammple distances
+
+```{r}
+sampleDists <- dist( t( assay(rld.rmBatchEff) ) )
+sampleDistMatrix <- as.matrix( sampleDists ) 
+```
+
+## Heatmap
+
+```{r fig.width=4.6, fig.height=3}
+colors <- colorRampPalette( rev(brewer.pal(ncol(COUNTS), "Blues")) )(255) 
+cols <- brewer.pal(5, "Set2")
+
+annotation_col = data.frame(
+                    Genotype = factor(SampleSheet$genotype), 
+                    Experiment = factor(SampleSheet$experiment), 
+                    row.names = rownames(SampleSheet)
+                )
+
+ann_colors = list(
+    Genotype = c(TGFbIIR_KO=cols[1], WT=cols[2]),
+    Experiment = c(exp1=cols[3], exp2=cols[4])
+)
+
+heatmap <- pheatmap(sampleDistMatrix,
+                    clustering_distance_rows=sampleDists,
+                    clustering_distance_cols=sampleDists,
+                    annotation_col = annotation_col,
+                    annotation_colors = ann_colors,
+                    col=colors, 
+                    main = "rld.rmBatchEff"
+)
+```
+
+
+
+## PCA analysis
+
+Calculate PCs: 
+```{r}
+PlotData <- plotPCA(rld.rmBatchEff, 
+                    intgroup = c("genotype", "experiment"), 
+                    returnData=TRUE)
+```
+
+Construct plot: 
+
+```{r fig.height=3, fig.width=4}
+percentVar<-round(100 * attr(PlotData, "percentVar"))
+
+ggplot(PlotData,aes(PC1,PC2)) + 
+	geom_point(size=3, aes(color = genotype, shape = genotype)) +
+	xlab(paste0("PC1: ", percentVar[1],"% variance")) +
+	ylab(paste0("PC2: ", percentVar[2],"% variance"))  + theme(
+    aspect.ratio=1,
+    panel.background = element_rect(fill = "white", colour = "grey50"),
+    axis.text=element_text(size=7),
+        axis.title=element_text(size=7,face="bold"),
+    legend.key = element_blank(),
+    legend.text = element_text(size=7),
+    legend.title = element_text(size = 7),
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank()
+  ) + scale_color_manual(
+    breaks = c( "TGFbIIR_KO",
+                "WT"),
+    values = c(
+                       cols[1], # TGFbIIR_KO
+                       cols[2] # WT
+                     ))
+```
+
+
+# Session information
+
+Nextflow: 
+
+```
+Nextflow version: version 21.03.0.edge, build 5518 (05-03-2021 10:52 UTC)
+Workflow profile: docker
+Workflow repository: https://github.com/nf-core/rnaseq, revision master (commit hash 3643a94411b65f42bce5357c5015603099556ad9)
+```
+
+Software version used by Workflow: 
+
+```
+bedtools	2.29.2
+bioconductor-summarizedexperiment	1.20.0
+bioconductor-tximeta	1.8.0
+deseq2	1.28.0
+dupradar	1.18.0
+fastqc	0.11.9
+nextflow	21.03.0.edge
+nf-core/rnaseq	3.0
+picard	2.23.9
+preseq	2.0.3
+qualimap	2.2.2-dev
+rseqc	3.0.1
+salmon	1.4.0
+samtools	1.10
+star	2.6.1d
+stringtie	2.1.4
+subread	2.0.1
+trimgalore	0.6.6
+ucsc	377
+```
+
+R sesssion: 
+
+```{r}
+sessionInfo()
+```
+
+# References
+

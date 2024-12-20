@@ -1,0 +1,297 @@
+---
+subtitle: "2-Differential Expression between TGFbRII-KO and WT"
+bibliography: bib.bib
+link-citations: yes
+date: "Rendered `r format (Sys.time(), format='%Y-%m-%d %H:%M:%S %z')`"
+output: 
+  pdf_document:
+    pandoc_args: 
+      - '../../common.yaml'
+      - --listings
+    includes: 
+      in_header: '../../preamble.tex'
+    toc: true
+    number_sections: true
+    fig_width: 7
+    fig_height: 6
+    fig_caption: true
+    df_print: tibble
+---
+
+
+```{r include=FALSE}
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80),
+               tidy=TRUE,
+               message = FALSE, 
+               warning = FALSE)
+
+```
+
+\newpage
+
+
+# Description
+
+The differential expression (DE) analysis was made with `DESeq2` package [@DESeq2]. The following packages were used to build plots: `ggplot2` [@ggplot2], `RColorBrewer` [@RColorBrewer] and `EnhancedVolcano` [@EnhancedVolcano]. 
+
+# Prepare packages and data for DE expression analysis
+
+```{r}
+suppressMessages(library(DESeq2))
+suppressMessages(library(ggplot2))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(EnhancedVolcano))
+
+cols <- brewer.pal(5, "Set2")
+dds <- readRDS(file = "../1_Bulk_RNAseq_Data_preparation/dds.Rds")
+```
+
+Filter the genes which have at leat 10 reads in at least 4 samples: 
+
+```{r}
+smallestGroupSize <- 4
+keep <- rowSums(counts(dds) >= 10) >= smallestGroupSize
+dds <- dds[keep,]
+dds
+```
+
+Set WT as reference group:
+
+```{r}
+dds$genotype <- relevel(dds$genotype, ref = "WT")
+```
+
+
+# Differentially expressed (DE) genes comparing TGFbRII-KO vs WT IMs
+
+According to Michel Love (https://support.bioconductor.org/p/121408/#121419), just putting the batch in the design helps to control for changes in the counts due to batch. Putting batch in the design formula is our recommendation when batches are known and when they are not confounded with the condition. Thus the batch variation (**experiment** variant) has been already considered into design. 
+
+```{r}
+design(dds)
+```
+
+Make DE analysis using default design: 
+```{r}
+dds <- DESeq(dds)
+res <- results(dds)
+
+summary(res) 
+```
+
+```{r}
+res_Shrunk <- lfcShrink(dds, res = res, 
+                        type = "apeglm", 
+                        coef = "genotype_TGFbIIR_KO_vs_WT")
+# refilled_vs_control <- merge(x=as.data.frame(res_refilled_vs_control), y=as.data.frame(res_refilled_vs_control_Shrunk), by=c(0,1))
+DE.res.KO_vs_WT <- merge(x=as.data.frame(res[1:4]), 
+                         y=as.data.frame(res_Shrunk), 
+                         by=c(0,1), 
+                         )
+
+colnames(DE.res.KO_vs_WT) <- c("Row.names", 
+                               "baseMean", "log2FoldChange", "lfcSE", "stat", "log2FoldChange.shrunk", "lfcSE.shrunk", "pvalue","padj")
+rownames(DE.res.KO_vs_WT) <- DE.res.KO_vs_WT$Row.names
+DE.res.KO_vs_WT <- DE.res.KO_vs_WT[, -1]
+DE.res.KO_vs_WT <- DE.res.KO_vs_WT[order(DE.res.KO_vs_WT$log2FoldChange), ]
+```
+
+```{r include=FALSE}
+DE.res.KO_vs_WT <- read.table(
+            file = "./DE.res.KO_vs_WT.txt", 
+            sep = "\t")
+```
+
+
+Add normalized counts of samples: 
+
+```{r eval=FALSE}
+normalized.counts <- counts(dds, normalized=TRUE)
+DE.res.KO_vs_WT.nCounts <- merge(x = DE.res.KO_vs_WT, 
+                                 y = normalized.counts, 
+                                 by = 'row.names')
+```
+
+```{r include=FALSE}
+DE.res.KO_vs_WT.nCounts <- read.table(file = "./DE.res.KO_vs_WT.with_normalized_data.txt", 
+            sep = "\t")
+```
+
+
+Significant DE genes:
+
+```{r}
+threshold.padj <- 0.05
+threshold.lfc <- 1
+sigDE.res.KO_vs_WT <- DE.res.KO_vs_WT[abs(DE.res.KO_vs_WT$log2FoldChange.shrunk) > threshold.lfc 
+                                      & DE.res.KO_vs_WT$padj < threshold.padj , ]
+```
+
+Number of significant KO up-regulated genes (logFC > 1)
+
+```{r}
+sum(sigDE.res.KO_vs_WT$log2FoldChange >1 )
+```
+
+Number of significant KO down-regulated genes (logFC < -1)
+
+```{r}
+sum(sigDE.res.KO_vs_WT$log2FoldChange < (-1) )
+```
+
+# Presentation of DE genes in volcano plots
+
+## TGFbIIR KO vs WT
+
+```{r fig.width=6, fig.height=5}
+
+de.res <- DE.res.KO_vs_WT
+
+de.res$Gene <- rownames(de.res)
+keyvals <- rep("grey", nrow(de.res))
+names(keyvals) <- rep("non-signif", nrow(de.res))
+
+keyvals[which(de.res$log2FoldChange.shrunk > 1 )] <- cols[1]
+names(keyvals)[which(de.res$log2FoldChange.shrunk > 1)] <- "TGFbIIR-KO"
+
+keyvals[which(de.res$log2FoldChange.shrunk < -1)] <- cols[2]
+names(keyvals)[which(de.res$log2FoldChange.shrunk < -1)] <- "WT"
+
+plot.vol <- EnhancedVolcano(de.res, subtitle = "", 
+                lab = rownames(de.res),
+                x = 'log2FoldChange.shrunk',
+                y = 'padj',
+                # xlim = c(-3, 3),
+                # ylim=c(0, -log10(10e-75)),
+                labSize = 3,
+                pCutoff = 0.05,
+                FCcutoff = 1,
+                colAlpha = 0.5,
+                colCustom = keyvals,
+                legendLabSize = 8,
+                legendIconSize = 2.0,
+                border = "full",
+                legendPosition = "right",
+                axisLabSize = 20, 
+                title = "TGFbIIR KO vs WT")
+
+plot.vol
+```
+
+## Plot the top DE genes 
+
+`plotCounts` uses normalized counts in dds. 
+
+```{r fig.width=3.5, fig.height=3}
+genesymbol <- "Cd209g"
+
+data <- plotCounts(dds = dds, gene=genesymbol, intgroup=c("experiment","genotype"), returnData=TRUE)
+
+ggplot(data, aes(x=genotype, y=count, colour = genotype)) +
+  scale_y_log10() + 
+  geom_boxplot() + 
+  geom_point(position=position_jitter(width=.1,height=0), size =2) +
+  ggtitle(genesymbol) +
+  theme(plot.title = element_text(hjust = 0.5, size = 20)) +
+  scale_color_manual(values = c(cols[1],cols[2]))+
+  ylab ("Normalized Count")+
+  theme_linedraw()+
+  theme_classic()
+
+```
+
+```{r fig.width=3.5, fig.height=3}
+genesymbol <- "Cd209f"
+
+data <- plotCounts(dds = dds, gene=genesymbol, intgroup=c("experiment","genotype"), returnData=TRUE)
+
+ggplot(data, aes(x=genotype, y=count, colour = genotype)) +
+  scale_y_log10() + 
+  geom_boxplot() + 
+  geom_point(position=position_jitter(width=.1,height=0), size =2) +
+  ggtitle(genesymbol) +
+  theme(plot.title = element_text(hjust = 0.5, size = 20)) +
+  scale_color_manual(values = c(cols[1],cols[2]))+
+  ylab ("Normalized Count")+
+  theme_linedraw()+
+  theme_classic()
+
+```
+
+```{r fig.width=3.5, fig.height=3}
+genesymbol <- "Mmp9"
+
+data <- plotCounts(dds = dds, gene=genesymbol, intgroup=c("experiment","genotype"), returnData=TRUE)
+
+ggplot(data, aes(x=genotype, y=count, colour = genotype)) +
+  scale_y_log10() + 
+  geom_boxplot() + 
+  geom_point(position=position_jitter(width=.1,height=0), size =2) +
+  ggtitle(genesymbol) +
+  theme(plot.title = element_text(hjust = 0.5, size = 20)) +
+  scale_color_manual(values = c(cols[1],cols[2]))+
+  ylab ("Normalized Count")+
+  theme_linedraw()+
+  theme_classic()
+
+```
+
+```{r fig.width=3.5, fig.height=3}
+genesymbol <- "Tmem119"
+
+data <- plotCounts(dds = dds, gene=genesymbol, intgroup=c("experiment","genotype"), returnData=TRUE)
+
+ggplot(data, aes(x=genotype, y=count, colour = genotype)) +
+  scale_y_log10() + 
+  geom_boxplot() + 
+  geom_point(position=position_jitter(width=.1,height=0), size =2) +
+  ggtitle(genesymbol) +
+  theme(plot.title = element_text(hjust = 0.5, size = 20)) +
+  scale_color_manual(values = c(cols[1],cols[2]))+
+  ylab ("Normalized Count")+
+  theme_linedraw()+
+  theme_classic()
+
+```
+
+```{r fig.width=3.5, fig.height=3}
+genesymbol <- "Cx3cr1"
+
+data <- plotCounts(dds = dds, gene=genesymbol, intgroup=c("experiment","genotype"), returnData=TRUE)
+
+ggplot(data, aes(x=genotype, y=count, colour = genotype)) +
+  scale_y_log10() + 
+  geom_boxplot() + 
+  geom_point(position=position_jitter(width=.1,height=0), size =2) +
+  ggtitle(genesymbol) +
+  theme(plot.title = element_text(hjust = 0.5, size = 20)) +
+  scale_color_manual(values = c(cols[1],cols[2]))+
+  ylab ("Normalized Count")+
+  theme_linedraw()+
+  theme_classic()
+
+```
+
+Give adjusted p-values for the following genes: 
+  - Tmem119
+  - Cx3cr1
+  - Cd209f
+  - Cd209g
+
+```{r}
+DE.res.KO_vs_WT[ c("Tmem119", 
+                   "Cx3cr1", 
+                   "Cd209f", 
+                   "Cd209g") , "padj"]
+```
+
+
+# Session information
+
+R sesssion: 
+
+```{r}
+sessionInfo()
+```
+
+# References
+

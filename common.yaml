@@ -1,0 +1,52 @@
+---
+title: "A lung Tgf-beta-signaling-mediated endothelial-interstitial macrophage axis 
+prevents age-related abnormalities"
+authorrunning: Peng et al.
+authors: 
+- name: W. Peng
+  address:  Laboratory of Immunophysiology, GIGA Institute, University of Liège; Liège, Belgium
+
+- name: D. Vanneste
+  address:  Laboratory of Immunophysiology, GIGA Institute, University of Liège; Liège, Belgium
+
+- name: W. Peng
+  address:  Laboratory of Immunophysiology, GIGA Institute, University of Liège; Liège, Belgium
+
+- name: D. Bejarano
+  address:  Quantitative Systems Biology, Life and Medical Sciences (LIMES) Institute, University of Bonn, Bonn, Germany
+
+- name: J. Abinet
+  address:  Laboratory of Immunophysiology, GIGA Institute, University of Liège; Liège, Belgium
+
+- name: M. Meunier
+  address:  Laboratory of Immunophysiology, GIGA Institute, University of Liège; Liège, Belgium
+
+- name: C. Radermecker
+  address:  Laboratory of Immunophysiology, GIGA Institute, University of Liège; Liège, Belgium
+
+- name: F. Perin
+  address:  Laboratory of Tumor and Development Biology, GIGA Institute, University of Liège; Liège, Belgium
+
+- name: D. Cataldo
+  address:  Laboratory of Tumor and Development Biology, GIGA Institute, University of Liège; Liège, Belgium
+
+- name: Q. Bai
+  address:  PhyMedExp INSERM 1046, University of Montpellier, Montpellier, France
+  email: qiang.bai@inserm.fr
+
+- name: T. Marichal
+  address:  Laboratory of Tumor and Development Biology, GIGA Institute, University of Liège; Liège, Belgium
+  email: t.marichal@uliege.be
+  
+keywords:
+- key
+- dictionary
+- word
+
+abstract: Lung interstitial macrophages (IMs) are monocyte-derived parenchymal macrophages whose homeostatic and tissue-supportive functions remain unclear. While recent progress has been made about the diversity and transcriptional regulation of lung IMs, the microenvironmental signals responsible for their development from monocytes and for their functional specification remain unidentified. Here we found, in mice, that lung endothelial cell-derived Tgf-beta1 specifically triggered a core Tgf-beta receptor-dependent IM signature in bone marrow-derived monocytes and macrophages (Macs). In vivo, myeloid-specific ablation of Tgf-beta receptor signaling severely impaired monocyte-to-IM development, resulting in the accumulation of perivascular monocytes, decreased IM numbers and a loss of IM-intrinsic identity. Of note, monocyte-to-IM development was similarly impaired in the absence of endothelial-specific Tgf-beta1. Functionally, lungs from mice selectively lacking Tgf-beta receptor in IMs exhibited spatial changes in monocyte and IM niche occupancies, a severe disruption in their immunoregulatory environment, and prematurely developed fibrosis, hyperinflation, increased compliance and decreased elastance, changes classically associated with aging. Our work identifies a novel endothelial-IM axis involving Tgf-beta1 - Tgf-beta receptor interactions that shapes IM development and identity and thereby sustains lung tissue integrity, thus providing foundations for IM-targeted interventions in the context of lung aging and other chronic inflammatory disorders.
+    
+bibliography: bib.bib
+
+csl: ../../science-immunology.csl
+link-citations: yes
+---

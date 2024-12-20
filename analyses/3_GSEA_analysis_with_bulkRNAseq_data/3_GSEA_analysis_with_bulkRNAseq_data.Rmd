@@ -1,0 +1,207 @@
+---
+subtitle: "3-GSEA analysis comparing TGFbRII-KO to control with bulkRNAseq data"
+bibliography: bib.bib
+link-citations: yes
+date: "Rendered `r format (Sys.time(), format='%Y-%m-%d %H:%M:%S %z')`"
+output: 
+  pdf_document:
+    pandoc_args: 
+      - '../../common.yaml'
+      - --listings
+    includes: 
+      in_header: '../../preamble.tex'
+    toc: true
+    number_sections: true
+    fig_width: 7
+    fig_height: 6
+    fig_caption: true
+    df_print: tibble
+---
+
+
+```{r include=FALSE}
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=80),
+               tidy=TRUE,
+               message = FALSE, 
+               warning = FALSE)
+
+```
+
+\newpage
+
+
+# Description
+
+The fold change between TGFbRII-KO and control for each gene (logFC) calculated in previous step was used to rank the genes from the most up-regulated to the most down-regulated gene in TGFbRII-KO. The ranked genelist was then subjectted to Gene Set Enrichment Analysis (GSEA). The genesets in MSigDB used for GSEA were extracted from msigdbr package [@msigdbr] and then used by `GSEA` function from `clusterProfiler` pakcage [@clusterProfiler]. `ggplot2` package was used to build plots [@ggplot2]. 
+
+
+# Prepare data for GSEA analysis
+
+Load packages:
+
+```{r}
+suppressMessages(library(ggplot2))
+suppressMessages(library(clusterProfiler))
+suppressMessages(library(msigdbr))
+```
+
+Load data: 
+
+```{r eval=FALSE}
+dds <- readRDS("../1_Bulk_RNAseq_Data_preparation/dds.Rds")
+
+# We will use the logFC calculated in previous step for ranking the genes: 
+DE.res.KO_vs_WT <- read.table(
+  file = "../2_Differential_Expression_TGFbRII-KO_vs_WT/DE.res.KO_vs_WT.txt", 
+  sep = "\t")
+
+genelist.ranked.KO_CTL <- DE.res.KO_vs_WT$log2FoldChange.shrunk
+names(genelist.ranked.KO_CTL) <- rownames(DE.res.KO_vs_WT)
+genelist.ranked.KO_CTL <- sort(genelist.ranked.KO_CTL, decreasing = TRUE)
+```
+
+Extract genesets from MSigDB database via `msigdbr` package: 
+
+```{r eval=FALSE}
+gs_c5_bp <- msigdbr(species = "Mus musculus", category = "C5", 
+                    subcategory = "GO:BP") %>% dplyr::select(gs_name, gene_symbol)
+gs_c5_cc <- msigdbr(species = "Mus musculus", category = "C5", 
+                    subcategory = "GO:CC") %>% dplyr::select(gs_name, gene_symbol)
+gs_c5_mf <- msigdbr(species = "Mus musculus", category = "C5", 
+                    subcategory = "GO:MF") %>% dplyr::select(gs_name, gene_symbol)
+gs_h <- msigdbr(species = "Mus musculus", category = "H") %>% 
+  dplyr::select(gs_name, gene_symbol)
+```
+
+## Enrichment with C1-Hallmark genesets
+
+```{r eval=FALSE}
+
+gsea_h <- GSEA(geneList = genelist.ranked.KO_CTL, 
+                   TERM2GENE = gs_h, 
+                   verbose = FALSE, seed = TRUE)
+gsea_h@result <- gsea_h[order(gsea_h$NES, decreasing = TRUE),]
+write.table(x = gsea_h@result, file = "./gsea_h.txt", sep = "\t")
+```
+
+
+```{r include=FALSE}
+gsea_h <- readRDS("./gsea_h.rds")
+```
+
+## Enrichment with C5-GO (BP) genesets
+
+```{r eval=FALSE}
+gsea_c5_bp <- GSEA(geneList = genelist.ranked.KO_CTL, 
+                   TERM2GENE = gs_c5_bp, 
+                   verbose = FALSE, seed = TRUE)
+gsea_c5_bp@result <- gsea_c5_bp[order(gsea_c5_bp$NES, decreasing = TRUE),]
+```
+
+
+```{r include=FALSE}
+gsea_c5_bp <- readRDS("./gsea_c5_bp.rds")
+```
+
+
+## Enrichment with C5-GO (MF)
+
+```{r eval=FALSE}
+gsea_c5_mf <- GSEA(geneList = genelist.ranked.KO_CTL, 
+                   TERM2GENE = gs_c5_mf, 
+                   verbose = FALSE, seed = 123)
+gsea_c5_mf@result <- gsea_c5_mf[order(gsea_c5_mf$NES, decreasing = TRUE),]
+```
+
+
+```{r include=FALSE}
+gsea_c5_mf <- readRDS("./gsea_c5_mf.rds")
+```
+
+
+## Enrichment with C5-GO (CC)
+
+```{r eval=FALSE}
+gsea_c5_cc <- GSEA(geneList = genelist.ranked.KO_CTL, 
+                   TERM2GENE = gs_c5_cc, 
+                   verbose = FALSE, seed = TRUE)
+gsea_c5_cc@result <- gsea_c5_cc[order(gsea_c5_cc$NES, decreasing = TRUE),]
+```
+
+
+```{r include=FALSE}
+gsea_c5_cc <- readRDS("./gsea_c5_cc.rds")
+```
+
+## C2-Pathway
+
+```{r eval=FALSE}
+gs_c2 <- msigdbr(species = "Mus musculus", 
+                 category = "C2") %>% 
+  dplyr::select(gs_name, gene_symbol)
+
+gsea_c2 <- GSEA(geneList = genelist.ranked.KO_CTL, 
+                   TERM2GENE = gs_c2, 
+                   verbose = FALSE, seed = TRUE)
+gsea_c2@result <- gsea_c2[order(gsea_c2$NES, decreasing = TRUE),]
+```
+
+
+```{r include=FALSE}
+gsea_c2 <- readRDS("./gsea_c2.rds")
+```
+
+# Make summarising dotplot
+
+Build dataframe with results: 
+
+```{r}
+df.pos <- do.call("rbind", list(gsea_c2[1,], # PLASARI_TGFB1_TARGETS_10HR_DN
+                      gsea_c5_bp[1,],  # GOBP_CELL_CELL_ADHESION_VIA_PLASMA_MEMBRANE_ADHESION_MOLECULES
+                      gsea_c5_bp["GOBP_MITOTIC_NUCLEAR_DIVISION",],
+                      gsea_h["HALLMARK_INTERFERON_ALPHA_RESPONSE",], 
+                      gsea_h["HALLMARK_G2M_CHECKPOINT",],
+                      gsea_h["HALLMARK_E2F_TARGETS",]) 
+        )
+
+
+df.neg <- do.call("rbind", list(gsea_c2["KARLSSON_TGFB1_TARGETS_UP",], 
+                      gsea_c2["KEGG_ANTIGEN_PROCESSING_AND_PRESENTATION",], 
+                      gsea_c5_bp["GOBP_ANTIGEN_PROCESSING_AND_PRESENTATION_OF_EXOGENOUS_PEPTIDE_ANTIGEN",], 
+                      gsea_c5_bp["GOBP_TISSUE_REMODELING",],
+                      gsea_h["HALLMARK_MTORC1_SIGNALING",],
+                      gsea_c2["FOSTER_TOLERANT_MACROPHAGE_UP",]) 
+        )
+
+# Order the data frame by NES
+df.both <- rbind(df.pos, df.neg)
+df.both <- df.both %>% arrange(NES)
+
+# Ensure the Pathway factor levels follow the order in the data frame
+df.both$ID <- factor(df.both$ID, levels = df.both$ID)
+```
+
+
+```{r fig.width=10, fig.height=5}
+# Create the plot
+ggplot(df.both, aes(x = NES, y = ID)) +
+  geom_point(aes(color = qvalue, size = -log10(p.adjust)), alpha = 0.7) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_color_gradient(low = "red", high = "blue") +
+  labs(x = "NES", y = "", title = "GSEA Results Summary") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(hjust = 1)) + 
+  guides(size = guide_legend(title = "-log(p.adjust)"), color = guide_colorbar(title = "FDR q.val"))
+```
+
+
+# Session information
+
+R sesssion: 
+
+```{r}
+sessionInfo()
+```
+
+# References
+
