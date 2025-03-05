@@ -1,0 +1,9 @@
+cff-version: 1.1.0
+message: "The codes used for bioinformatics analysis in Peng et al. 2025. Science Immunology."
+authors:
+- family-names: Bai
+  given-names: Qiang
+orcid: https://orcid.org/0000-0001-7423-0712
+title:BlanQwall/TGFb_IM: New release for archiving in Zenodo
+version: v1.0.0
+date-released: 2025-03-05
